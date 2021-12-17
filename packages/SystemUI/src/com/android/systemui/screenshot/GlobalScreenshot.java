@@ -88,6 +88,7 @@ class SaveImageInBackgroundData {
         imageUri = null;
         iconSize = 0;
     }
+
     void clearContext() {
         context = null;
     }
@@ -333,21 +334,23 @@ class SaveImageInBackgroundTask extends AsyncTask<Void, Void, Void> {
             mPublicNotificationBuilder
                     .setContentTitle(r.getString(R.string.screenshot_saved_title))
                     .setContentText(r.getString(R.string.screenshot_saved_text))
-                    .setContentIntent(PendingIntent.getActivity(mParams.context, 0, launchIntent, 0))
+                    .setContentIntent(PendingIntent.getActivity(mParams.context, 0, launchIntent,
+                            PendingIntent.FLAG_IMMUTABLE))
                     .setWhen(now)
                     .setAutoCancel(true)
                     .setColor(context.getColor(
                             com.android.internal.R.color.system_notification_accent_color));
             mNotificationBuilder
-                .setContentTitle(r.getString(R.string.screenshot_saved_title))
-                .setContentText(r.getString(R.string.screenshot_saved_text))
-                .setContentIntent(PendingIntent.getActivity(mParams.context, 0, launchIntent, 0))
-                .setWhen(now)
-                .setAutoCancel(true)
-                .setColor(context.getColor(
-                        com.android.internal.R.color.system_notification_accent_color))
-                .setPublicVersion(mPublicNotificationBuilder.build())
-                .setFlag(Notification.FLAG_NO_CLEAR, false);
+                    .setContentTitle(r.getString(R.string.screenshot_saved_title))
+                    .setContentText(r.getString(R.string.screenshot_saved_text))
+                    .setContentIntent(PendingIntent.getActivity(mParams.context, 0, launchIntent,
+                            PendingIntent.FLAG_IMMUTABLE))
+                    .setWhen(now)
+                    .setAutoCancel(true)
+                    .setColor(context.getColor(
+                            com.android.internal.R.color.system_notification_accent_color))
+                    .setPublicVersion(mPublicNotificationBuilder.build())
+                    .setFlag(Notification.FLAG_NO_CLEAR, false);
 
             mNotificationManager.notify(SystemMessage.NOTE_GLOBAL_SCREENSHOT,
                     mNotificationBuilder.build());
@@ -425,6 +428,7 @@ class GlobalScreenshot {
 
     private Bitmap mScreenBitmap;
     private View mScreenshotLayout;
+    private View mScreenshotSelectorLayout;
     private ScreenshotSelectorView mScreenshotSelectorView;
     private ImageView mBackgroundView;
     private ImageView mScreenshotView;
@@ -454,15 +458,18 @@ class GlobalScreenshot {
         // Inflate the screenshot layout
         mDisplayMatrix = new Matrix();
         mScreenshotLayout = layoutInflater.inflate(R.layout.global_screenshot, null);
-        mBackgroundView = (ImageView) mScreenshotLayout.findViewById(R.id.global_screenshot_background);
+        mScreenshotSelectorLayout = layoutInflater.inflate(R.layout.global_screenshot, null);
+        mBackgroundView = (ImageView) mScreenshotLayout.findViewById(
+                R.id.global_screenshot_background);
         mScreenshotView = (ImageView) mScreenshotLayout.findViewById(R.id.global_screenshot);
         mScreenshotFlash = (ImageView) mScreenshotLayout.findViewById(R.id.global_screenshot_flash);
-        mScreenshotSelectorView = (ScreenshotSelectorView) mScreenshotLayout.findViewById(
+        mScreenshotSelectorView = (ScreenshotSelectorView) mScreenshotSelectorLayout.findViewById(
                 R.id.global_screenshot_selector);
         mScreenshotLayout.setFocusable(true);
+        mScreenshotSelectorLayout.setFocusable(true);
         mScreenshotSelectorView.setFocusable(true);
         mScreenshotSelectorView.setFocusableInTouchMode(true);
-        mScreenshotLayout.setOnTouchListener(new View.OnTouchListener() {
+        mScreenshotSelectorLayout.setOnTouchListener(new View.OnTouchListener() {
             @Override
             public boolean onTouch(View v, MotionEvent event) {
                 // Intercept and ignore all touch events
@@ -483,17 +490,18 @@ class GlobalScreenshot {
         mWindowManager = (WindowManager) context.getSystemService(Context.WINDOW_SERVICE);
         mNotificationManager =
             (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+
         mDisplay = mWindowManager.getDefaultDisplay();
         mDisplayMetrics = new DisplayMetrics();
         mDisplay.getRealMetrics(mDisplayMetrics);
 
         // Get the various target sizes
         mNotificationIconSize =
-            r.getDimensionPixelSize(android.R.dimen.notification_large_icon_height);
+                r.getDimensionPixelSize(android.R.dimen.notification_large_icon_height);
 
         // Scale has to account for both sides of the bg
         mBgPadding = (float) r.getDimensionPixelSize(R.dimen.global_screenshot_bg_padding);
-        mBgPaddingScale = mBgPadding /  mDisplayMetrics.widthPixels;
+        mBgPaddingScale = mBgPadding / mDisplayMetrics.widthPixels;
 
         // determine the optimal preview size
         int panelWidth = 0;
@@ -623,7 +631,7 @@ class GlobalScreenshot {
      */
     void takeScreenshotPartial(final Runnable finisher, final boolean statusBarVisible,
             final boolean navBarVisible) {
-        mWindowManager.addView(mScreenshotLayout, mWindowLayoutParams);
+        mWindowManager.addView(mScreenshotSelectorLayout, mWindowLayoutParams);
         mScreenshotSelectorView.setOnTouchListener(new View.OnTouchListener() {
             @Override
             public boolean onTouch(View v, MotionEvent event) {
@@ -637,18 +645,20 @@ class GlobalScreenshot {
                         return true;
                     case MotionEvent.ACTION_UP:
                         view.setVisibility(View.GONE);
-                        mWindowManager.removeView(mScreenshotLayout);
+                        mWindowManager.removeView(mScreenshotSelectorLayout);
                         final Rect rect = view.getSelectionRect();
-                        if (rect != null) {
-                            if (rect.width() != 0 && rect.height() != 0) {
-                                // Need mScreenshotLayout to handle it after the view disappears
-                                mScreenshotLayout.post(new Runnable() {
-                                    public void run() {
-                                        takeScreenshot(finisher, statusBarVisible, navBarVisible,
-                                                rect.left, rect.top, rect.width(), rect.height());
-                                    }
-                                });
-                            }
+                        if (rect != null && rect.width() != 0 && rect.height() != 0) {
+                            // Need mScreenshotSelectorLayout to handle it after the view disappears
+                            mScreenshotSelectorLayout.post(new Runnable() {
+                                public void run() {
+                                    takeScreenshot(finisher, statusBarVisible, navBarVisible,
+                                            rect.left, rect.top, rect.width(), rect.height());
+                                }
+                            });
+                        } else {
+                            // Clean up if nothing is selected
+                            // to initialize a new screenshot later
+                            finisher.run();
                         }
 
                         view.stopSelection();
@@ -658,7 +668,7 @@ class GlobalScreenshot {
                 return false;
             }
         });
-        mScreenshotLayout.post(new Runnable() {
+        mScreenshotSelectorLayout.post(new Runnable() {
             @Override
             public void run() {
                 mScreenshotSelectorView.setVisibility(View.VISIBLE);
@@ -674,6 +684,7 @@ class GlobalScreenshot {
         // If the selector layer still presents on screen, we remove it and resets its state.
         if (mScreenshotSelectorView.getSelectionRect() != null) {
             mWindowManager.removeView(mScreenshotLayout);
+            mWindowManager.removeView(mScreenshotSelectorLayout);
             mScreenshotSelectorView.stopSelection();
         }
     }
@@ -725,6 +736,7 @@ class GlobalScreenshot {
             }
         });
     }
+
     private ValueAnimator createScreenshotDropInAnimation() {
         final float flashPeakDurationPct = ((float) (SCREENSHOT_FLASH_TO_PEAK_DURATION)
                 / SCREENSHOT_DROP_IN_DURATION);
@@ -775,7 +787,7 @@ class GlobalScreenshot {
             public void onAnimationUpdate(ValueAnimator animation) {
                 float t = (Float) animation.getAnimatedValue();
                 float scaleT = (SCREENSHOT_SCALE + mBgPaddingScale)
-                    - scaleInterpolator.getInterpolation(t)
+                        - scaleInterpolator.getInterpolation(t)
                         * (SCREENSHOT_SCALE - SCREENSHOT_DROP_IN_MIN_SCALE);
                 mBackgroundView.setAlpha(scaleInterpolator.getInterpolation(t) * BACKGROUND_ALPHA);
                 mScreenshotView.setAlpha(t);
@@ -786,6 +798,7 @@ class GlobalScreenshot {
         });
         return anim;
     }
+
     private ValueAnimator createScreenshotDropOutAnimation(int w, int h, boolean statusBarVisible,
             boolean navBarVisible) {
         ValueAnimator anim = ValueAnimator.ofFloat(0f, 1f);
@@ -807,7 +820,8 @@ class GlobalScreenshot {
                 public void onAnimationUpdate(ValueAnimator animation) {
                     float t = (Float) animation.getAnimatedValue();
                     float scaleT = (SCREENSHOT_DROP_IN_MIN_SCALE + mBgPaddingScale)
-                            - t * (SCREENSHOT_DROP_IN_MIN_SCALE - SCREENSHOT_FAST_DROP_OUT_MIN_SCALE);
+                            - t * (SCREENSHOT_DROP_IN_MIN_SCALE
+                            - SCREENSHOT_FAST_DROP_OUT_MIN_SCALE);
                     mBackgroundView.setAlpha((1f - t) * BACKGROUND_ALPHA);
                     mScreenshotView.setAlpha(1f - t);
                     mScreenshotView.setScaleX(scaleT);
@@ -834,8 +848,10 @@ class GlobalScreenshot {
             float halfScreenHeight = (h - 2f * mBgPadding) / 2f;
             final float offsetPct = SCREENSHOT_DROP_OUT_MIN_SCALE_OFFSET;
             final PointF finalPos = new PointF(
-                -halfScreenWidth + (SCREENSHOT_DROP_OUT_MIN_SCALE + offsetPct) * halfScreenWidth,
-                -halfScreenHeight + (SCREENSHOT_DROP_OUT_MIN_SCALE + offsetPct) * halfScreenHeight);
+                    -halfScreenWidth
+                            + (SCREENSHOT_DROP_OUT_MIN_SCALE + offsetPct) * halfScreenWidth,
+                    -halfScreenHeight
+                            + (SCREENSHOT_DROP_OUT_MIN_SCALE + offsetPct) * halfScreenHeight);
 
             // Animate the screenshot to the status bar
             anim.setDuration(SCREENSHOT_DROP_OUT_DURATION);
@@ -844,7 +860,7 @@ class GlobalScreenshot {
                 public void onAnimationUpdate(ValueAnimator animation) {
                     float t = (Float) animation.getAnimatedValue();
                     float scaleT = (SCREENSHOT_DROP_IN_MIN_SCALE + mBgPaddingScale)
-                        - scaleInterpolator.getInterpolation(t)
+                            - scaleInterpolator.getInterpolation(t)
                             * (SCREENSHOT_DROP_IN_MIN_SCALE - SCREENSHOT_DROP_OUT_MIN_SCALE);
                     mBackgroundView.setAlpha((1f - t) * BACKGROUND_ALPHA);
                     mScreenshotView.setAlpha(1f - scaleInterpolator.getInterpolation(t));
@@ -864,15 +880,15 @@ class GlobalScreenshot {
 
         // Repurpose the existing notification to notify the user of the error
         Notification.Builder b = new Notification.Builder(context)
-            .setTicker(r.getString(R.string.screenshot_failed_title))
-            .setContentTitle(r.getString(R.string.screenshot_failed_title))
-            .setContentText(errorMsg)
-            .setSmallIcon(R.drawable.stat_notify_image_error)
-            .setWhen(System.currentTimeMillis())
-            .setVisibility(Notification.VISIBILITY_PUBLIC) // ok to show outside lockscreen
-            .setCategory(Notification.CATEGORY_ERROR)
-            .setAutoCancel(true)
-            .setColor(context.getColor(
+                .setTicker(r.getString(R.string.screenshot_failed_title))
+                .setContentTitle(r.getString(R.string.screenshot_failed_title))
+                .setContentText(errorMsg)
+                .setSmallIcon(R.drawable.stat_notify_image_error)
+                .setWhen(System.currentTimeMillis())
+                .setVisibility(Notification.VISIBILITY_PUBLIC) // ok to show outside lockscreen
+                .setCategory(Notification.CATEGORY_ERROR)
+                .setAutoCancel(true)
+                .setColor(context.getColor(
                         com.android.internal.R.color.system_notification_accent_color));
         SystemUI.overrideNotificationAppName(context, b);
 

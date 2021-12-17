@@ -4883,6 +4883,18 @@ public final class Settings {
         public static final String DEVICE_PROVISIONED = Global.DEVICE_PROVISIONED;
 
         /**
+         * Indicates whether a DPC has been downloaded during provisioning.
+         *
+         * <p>Type: int (0 for false, 1 for true)
+         *
+         * <p>If this is true, then any attempts to begin setup again should result in factory reset
+         *
+         * @hide
+         */
+        public static final String MANAGED_PROVISIONING_DPC_DOWNLOADED =
+                "managed_provisioning_dpc_downloaded";
+
+        /**
          * Whether the current user has been set up via setup wizard (0 = false, 1 = true)
          * @hide
          */
@@ -9234,6 +9246,13 @@ public final class Settings {
          * @hide
          */
         public static final String DATABASE_DOWNGRADE_REASON = "database_downgrade_reason";
+
+        /**
+         * Whether to ignore the representation of outgoing calls set by the network.
+         *
+         * @hide
+         */
+         public static final String CONNECTED_LINE_IDENTIFICATION = "connected_line_identification";
 
         /**
          * Settings to backup. This is here so that it's in the same place as the settings

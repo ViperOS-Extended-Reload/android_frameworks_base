@@ -128,6 +128,9 @@ public class DownloadManager {
      */
     public final static String COLUMN_STATUS = Downloads.Impl.COLUMN_STATUS;
 
+    /** {@hide} */
+    public static final String COLUMN_FILE_NAME_HINT = Downloads.Impl.COLUMN_FILE_NAME_HINT;
+
     /**
      * Provides more detail on the status of the download.  Its meaning depends on the value of
      * {@link #COLUMN_STATUS}.
@@ -164,6 +167,9 @@ public class DownloadManager {
      * downloaded list.
      */
     public static final String COLUMN_MEDIAPROVIDER_URI = Downloads.Impl.COLUMN_MEDIAPROVIDER_URI;
+
+    /** {@hide} */
+    public static final String COLUMN_DESTINATION = Downloads.Impl.COLUMN_DESTINATION;
 
     /**
      * @hide
@@ -333,26 +339,22 @@ public class DownloadManager {
      * @hide
      */
     public static final String[] UNDERLYING_COLUMNS = new String[] {
-        Downloads.Impl._ID,
-        Downloads.Impl._DATA + " AS " + COLUMN_LOCAL_FILENAME,
-        Downloads.Impl.COLUMN_MEDIAPROVIDER_URI,
-        Downloads.Impl.COLUMN_DESTINATION,
-        Downloads.Impl.COLUMN_TITLE,
-        Downloads.Impl.COLUMN_DESCRIPTION,
-        Downloads.Impl.COLUMN_URI,
-        Downloads.Impl.COLUMN_STATUS,
-        Downloads.Impl.COLUMN_FILE_NAME_HINT,
-        Downloads.Impl.COLUMN_MIME_TYPE + " AS " + COLUMN_MEDIA_TYPE,
-        Downloads.Impl.COLUMN_TOTAL_BYTES + " AS " + COLUMN_TOTAL_SIZE_BYTES,
-        Downloads.Impl.COLUMN_LAST_MODIFICATION + " AS " + COLUMN_LAST_MODIFIED_TIMESTAMP,
-        Downloads.Impl.COLUMN_CURRENT_BYTES + " AS " + COLUMN_BYTES_DOWNLOADED_SO_FAR,
-        Downloads.Impl.COLUMN_ALLOW_WRITE,
-        /* add the following 'computed' columns to the cursor.
-         * they are not 'returned' by the database, but their inclusion
-         * eliminates need to have lot of methods in CursorTranslator
-         */
-        "'placeholder' AS " + COLUMN_LOCAL_URI,
-        "'placeholder' AS " + COLUMN_REASON
+        DownloadManager.COLUMN_ID,
+        DownloadManager.COLUMN_LOCAL_FILENAME,
+        DownloadManager.COLUMN_MEDIAPROVIDER_URI,
+        DownloadManager.COLUMN_DESTINATION,
+        DownloadManager.COLUMN_TITLE,
+        DownloadManager.COLUMN_DESCRIPTION,
+        DownloadManager.COLUMN_URI,
+        DownloadManager.COLUMN_STATUS,
+        DownloadManager.COLUMN_FILE_NAME_HINT,
+        DownloadManager.COLUMN_MEDIA_TYPE,
+        DownloadManager.COLUMN_TOTAL_SIZE_BYTES,
+        DownloadManager.COLUMN_LAST_MODIFIED_TIMESTAMP,
+        DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR,
+        DownloadManager.COLUMN_ALLOW_WRITE,
+        DownloadManager.COLUMN_LOCAL_URI,
+        DownloadManager.COLUMN_REASON
     };
 
     /**
@@ -839,6 +841,7 @@ public class DownloadManager {
 
         private long[] mIds = null;
         private Integer mStatusFlags = null;
+        private String mFilterString = null;
         private String mOrderByColumn = Downloads.Impl.COLUMN_LAST_MODIFICATION;
         private int mOrderDirection = ORDER_DESCENDING;
         private boolean mOnlyIncludeVisibleInDownloadsUi = false;
@@ -849,6 +852,17 @@ public class DownloadManager {
          */
         public Query setFilterById(long... ids) {
             mIds = ids;
+            return this;
+        }
+
+        /**
+         *
+         * Include only the downloads that contains the given string in its name.
+         * @return this object
+         * @hide
+         */
+        public Query setFilterByString(@Nullable String filter) {
+            mFilterString = filter;
             return this;
         }
 
@@ -911,9 +925,20 @@ public class DownloadManager {
             List<String> selectionParts = new ArrayList<String>();
             String[] selectionArgs = null;
 
-            if (mIds != null) {
-                selectionParts.add(getWhereClauseForIds(mIds));
-                selectionArgs = getWhereArgsForIds(mIds);
+            int whereArgsCount = (mIds == null) ? 0 : mIds.length;
+            whereArgsCount = (mFilterString == null) ? whereArgsCount : whereArgsCount + 1;
+            selectionArgs = new String[whereArgsCount];
+
+            if (whereArgsCount > 0) {
+                if (mIds != null) {
+                    selectionParts.add(getWhereClauseForIds(mIds));
+                    getWhereArgsForIds(mIds, selectionArgs);
+                }
+
+                if (mFilterString != null) {
+                    selectionParts.add(Downloads.Impl.COLUMN_TITLE + " LIKE ?");
+                    selectionArgs[selectionArgs.length - 1] = "%" + mFilterString + "%";
+                }
             }
 
             if (mStatusFlags != null) {
@@ -1486,11 +1511,21 @@ public class DownloadManager {
      */
     static String[] getWhereArgsForIds(long[] ids) {
         String[] whereArgs = new String[ids.length];
-        for (int i = 0; i < ids.length; i++) {
-            whereArgs[i] = Long.toString(ids[i]);
-        }
-        return whereArgs;
+        return getWhereArgsForIds(ids, whereArgs);
     }
+
+    /**
+     * Get selection args for a clause returned by {@link #getWhereClauseForIds(long[])}
+     * and write it to the supplied args array.
+     */
+    static String[] getWhereArgsForIds(long[] ids, String[] args) {
+        assert(args.length >= ids.length);
+        for (int i = 0; i < ids.length; i++) {
+            args[i] = Long.toString(ids[i]);
+        }
+        return args;
+    }
+
 
     /**
      * This class wraps a cursor returned by DownloadProvider -- the "underlying cursor" -- and

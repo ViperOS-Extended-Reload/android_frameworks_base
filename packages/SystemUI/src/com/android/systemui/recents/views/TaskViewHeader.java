@@ -282,9 +282,9 @@ public class TaskViewHeader extends FrameLayout
         lp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.START | Gravity.CENTER_VERTICAL);
         lp.setMarginStart(mHeaderBarHeight);
-        lp.setMarginEnd(mMoveTaskButton != null
-                ? 2 * mHeaderBarHeight
-                : mHeaderBarHeight);
+        lp.setMarginEnd(mHeaderBarHeight +
+                ((secondaryButton != null ? mHeaderBarHeight : 0)
+                + (tertiaryButton != null ? mHeaderBarHeight : 0)));
         title.setLayoutParams(lp);
         if (secondaryButton != null) {
             lp = new FrameLayout.LayoutParams(mHeaderBarHeight, mHeaderBarHeight, Gravity.END);
@@ -479,9 +479,17 @@ public class TaskViewHeader extends FrameLayout
     }
 
     private void updateLockTaskDrawable() {
-        mLockTaskButton.setImageDrawable(mTask.useLightOnPrimaryColor ?
-                (Recents.sLockedTasks.contains(mTask) ? mLightLockedDrawable : mLightUnlockedDrawable) :
-                (Recents.sLockedTasks.contains(mTask) ? mDarkLockedDrawable : mDarkUnlockedDrawable));
+        if (Recents.sLockedTasks.contains(mTask)) {
+            mLockTaskButton.setImageDrawable(mTask.useLightOnPrimaryColor ?
+                    mLightLockedDrawable : mDarkLockedDrawable);
+            mLockTaskButton.setContentDescription(
+                    getResources().getString(R.string.accessibility_unlock_task, mTask.title));
+        } else {
+            mLockTaskButton.setImageDrawable(mTask.useLightOnPrimaryColor ?
+                    mLightUnlockedDrawable : mDarkUnlockedDrawable);
+            mLockTaskButton.setContentDescription(
+                    getResources().getString(R.string.accessibility_lock_task, mTask.title));
+        }
         ((AnimatedVectorDrawable) mLockTaskButton.getDrawable()).start();
     }
 

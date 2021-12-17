@@ -1113,6 +1113,11 @@
     <permission android:name="android.permission.MODIFY_CELL_BROADCASTS"
                 android:protectionLevel="signature|privileged" />
 
+    <!-- Allows an application to authorize outgoing SMS messages.
+         @hide -->
+    <permission android:name="android.permission.AUTHORIZE_OUTGOING_SMS"
+                android:protectionLevel="signature" />
+
     <!-- =============================================================== -->
     <!-- Permissions for setting the device alarm                        -->
     <!-- =============================================================== -->
@@ -1257,6 +1262,13 @@
     <!-- Allows applications to act as network scorers. @hide @SystemApi-->
     <permission android:name="android.permission.SCORE_NETWORKS"
         android:protectionLevel="signature|privileged" />
+
+    <!-- Allows network stack services (Connectivity and Wifi) to coordinate
+         <p>Not for use by third-party or privileged applications.
+         @hide This should only be used by Connectivity and Wifi Services.
+    -->
+    <permission android:name="android.permission.NETWORK_STACK"
+        android:protectionLevel="signature" />
 
     <!-- ======================================= -->
     <!-- Permissions for short range, peripheral networks -->
@@ -2201,6 +2213,15 @@
     -->
     <permission android:name="android.permission.INTERNAL_SYSTEM_WINDOW"
         android:protectionLevel="signature" />
+
+    <!-- @SystemApi Allows an application to use
+        {@link android.view.WindowManager.LayoutsParams#PRIVATE_FLAG_HIDE_NON_SYSTEM_OVERLAY_WINDOWS}
+        to hide non-system-overlay windows.
+        <p>Not for use by third-party applications.
+        @hide
+    -->
+    <permission android:name="android.permission.HIDE_NON_SYSTEM_OVERLAY_WINDOWS"
+        android:protectionLevel="signature|installer" />
 
     <!-- @SystemApi Allows an application to manage (create, destroy,
          Z-order) application tokens in the window manager.

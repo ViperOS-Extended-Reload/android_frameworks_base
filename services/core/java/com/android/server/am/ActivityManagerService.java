@@ -537,9 +537,6 @@ public final class ActivityManagerService extends ActivityManagerNative
     private static final String INTENT_REMOTE_BUGREPORT_FINISHED =
             "android.intent.action.REMOTE_BUGREPORT_FINISHED";
 
-    private static final String ACTION_POWER_OFF_ALARM =
-            "org.codeaurora.alarm.action.POWER_OFF_ALARM";
-
     // Delay to disable app launch boost
     static final int APP_BOOST_MESSAGE_DELAY = 3000;
     // Lower delay than APP_BOOST_MESSAGE_DELAY to disable the boost
@@ -2356,19 +2353,16 @@ public final class ActivityManagerService extends ActivityManagerNative
                     Intent infoIntent = new Intent(Settings.ACTION_APP_OPS_DETAILS_SETTINGS,
                             Uri.fromParts("package", root.packageName, null));
 
-                    Notification notification = new Notification();
-                    notification.icon = com.android.internal.R.drawable.stat_notify_privacy_guard;
-                    notification.when = 0;
-                    notification.flags = Notification.FLAG_ONGOING_EVENT;
-                    notification.priority = Notification.PRIORITY_LOW;
-                    notification.defaults = 0;
-                    notification.sound = null;
-                    notification.vibrate = null;
-                    notification.setLatestEventInfo(mContext,
-                            title, text,
-                            PendingIntent.getActivityAsUser(mContext, 0, infoIntent,
-                                    PendingIntent.FLAG_CANCEL_CURRENT, null,
+                    Notification.Builder builder = new Notification.Builder(mContext);
+                    builder.setSmallIcon(com.android.internal.R.drawable.stat_notify_privacy_guard)
+                            .setOngoing(true)
+                            .setPriority(Notification.PRIORITY_LOW)
+                            .setContentTitle(title)
+                            .setContentText(text)
+                            .setContentIntent(PendingIntent.getActivityAsUser(mContext, 0,
+                                    infoIntent, PendingIntent.FLAG_CANCEL_CURRENT, null,
                                     new UserHandle(root.userId)));
+                    Notification notification = builder.build();
 
                     try {
                         int[] outId = new int[1];
@@ -3645,7 +3639,8 @@ public final class ActivityManagerService extends ActivityManagerNative
             final int procCount = procs.size();
             for (int i = 0; i < procCount; i++) {
                 final int procUid = procs.keyAt(i);
-                if (UserHandle.isApp(procUid) || !UserHandle.isSameUser(procUid, uid)) {
+                if (UserHandle.isApp(procUid) || !UserHandle.isSameUser(procUid, uid)
+                        || UserHandle.isIsolated(procUid)) {
                     // Don't use an app process or different user process for system component.
                     continue;
                 }
@@ -4322,8 +4317,17 @@ public final class ActivityManagerService extends ActivityManagerNative
         return procState;
     }
 
+    private boolean isCallerShell() {
+        final int callingUid = Binder.getCallingUid();
+        return callingUid == Process.SHELL_UID || callingUid == Process.ROOT_UID;
+    }
+
     @Override
     public boolean setProcessMemoryTrimLevel(String process, int userId, int level) {
+        if (!isCallerShell()) {
+            EventLog.writeEvent(0x534e4554, 160390416, Binder.getCallingUid(), "");
+            throw new SecurityException("Only shell can call it");
+        }
         synchronized (this) {
             final ProcessRecord app = findProcessLocked(process, userId, "setProcessMemoryTrimLevel");
             if (app == null) {
@@ -4931,9 +4935,9 @@ public final class ActivityManagerService extends ActivityManagerNative
                 userId, false, ALLOW_FULL_ONLY, "startActivityInPackage", null);
 
         // TODO: Switch to user app stacks here.
-        int ret = mActivityStarter.startActivityMayWait(null, uid, callingPackage, intent,
-                resolvedType, null, null, resultTo, resultWho, requestCode, startFlags,
-                null, null, null, bOptions, false, userId, container, inTask);
+        int ret = mActivityStarter.startActivityMayWait(null, uid, ActivityStarter.PID_NULL, uid,
+                callingPackage, intent, resolvedType, null, null, resultTo, resultWho, requestCode,
+                startFlags, null, null, null, bOptions, false, userId, container, inTask);
         return ret;
     }
 
@@ -4953,12 +4957,19 @@ public final class ActivityManagerService extends ActivityManagerNative
     final int startActivitiesInPackage(int uid, String callingPackage,
             Intent[] intents, String[] resolvedTypes, IBinder resultTo,
             Bundle bOptions, int userId) {
+        return startActivitiesInPackage(uid, ActivityStarter.PID_NULL, UserHandle.USER_NULL,
+                callingPackage, intents, resolvedTypes, resultTo, bOptions, userId);
+    }
+
+    final int startActivitiesInPackage(int uid, int realCallingPid, int realCallingUid,
+                                       String callingPackage, Intent[] intents, String[] resolvedTypes,
+                                       IBinder resultTo, Bundle bOptions, int userId) {
 
         userId = mUserController.handleIncomingUser(Binder.getCallingPid(), Binder.getCallingUid(),
                 userId, false, ALLOW_FULL_ONLY, "startActivityInPackage", null);
         // TODO: Switch to user app stacks here.
-        int ret = mActivityStarter.startActivities(null, uid, callingPackage, intents, resolvedTypes,
-                resultTo, bOptions, userId);
+        int ret = mActivityStarter.startActivities(null, uid, realCallingPid, realCallingUid,
+                callingPackage, intents, resolvedTypes, resultTo, bOptions, userId);
         return ret;
     }
 
@@ -5131,7 +5142,7 @@ public final class ActivityManagerService extends ActivityManagerNative
 
     @Override
     public void crashApplication(int uid, int initialPid, String packageName,
-            String message) {
+            String message, boolean force) {
         if (checkCallingPermission(android.Manifest.permission.FORCE_STOP_PACKAGES)
                 != PackageManager.PERMISSION_GRANTED) {
             String msg = "Permission Denial: crashApplication() from pid="
@@ -5143,7 +5154,8 @@ public final class ActivityManagerService extends ActivityManagerNative
         }
 
         synchronized(this) {
-            mAppErrors.scheduleAppCrashLocked(uid, initialPid, packageName, message);
+            mAppErrors.scheduleAppCrashLocked(uid, initialPid, packageName,
+                    message, force);
         }
     }
 
@@ -6648,7 +6660,7 @@ public final class ActivityManagerService extends ActivityManagerNative
         }
     }
 
-    private final boolean attachApplicationLocked(IApplicationThread thread,
+    private boolean attachApplicationLocked(@NonNull IApplicationThread thread,
             int pid) {
 
         // Find the application record that is being attached...  either via
@@ -6896,6 +6908,9 @@ public final class ActivityManagerService extends ActivityManagerNative
 
     @Override
     public final void attachApplication(IApplicationThread thread) {
+        if (thread == null) {
+            throw new SecurityException("Invalid application interface");
+        }
         synchronized (this) {
             int callingPid = Binder.getCallingPid();
             final long origId = Binder.clearCallingIdentity();
@@ -8314,13 +8329,26 @@ public final class ActivityManagerService extends ActivityManagerNative
             }
         }
 
+        // Figure out the value returned when access is allowed
+        final int allowedResult;
+        if ((modeFlags & Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION) != 0) {
+            // If we're extending a persistable grant, then we need to return
+            // "targetUid" so that we always create a grant data structure to
+            // support take/release APIs
+            allowedResult = targetUid;
+        } else {
+            // Otherwise, we can return "-1" to indicate that no grant data
+            // structures need to be created
+            allowedResult = -1;
+        }
+
         if (targetUid >= 0) {
             // First...  does the target actually need this permission?
             if (checkHoldingPermissionsLocked(pm, pi, grantUri, targetUid, modeFlags)) {
                 // No need to grant the target this permission.
                 if (DEBUG_URI_PERMISSION) Slog.v(TAG_URI_PERMISSION,
                         "Target " + targetPkg + " already has full permission to " + grantUri);
-                return -1;
+                return allowedResult;
             }
         } else {
             // First...  there is no target package, so can anyone access it?
@@ -8336,7 +8364,7 @@ public final class ActivityManagerService extends ActivityManagerNative
                 }
             }
             if (allowed) {
-                return -1;
+                return allowedResult;
             }
         }
 
@@ -10955,64 +10983,65 @@ public final class ActivityManagerService extends ActivityManagerNative
 
                 final long origId = Binder.clearCallingIdentity();
 
-                checkTime(startTime, "getContentProviderImpl: incProviderCountLocked");
+                try {
+                    checkTime(startTime, "getContentProviderImpl: incProviderCountLocked");
 
-                // In this case the provider instance already exists, so we can
-                // return it right away.
-                conn = incProviderCountLocked(r, cpr, token, stable);
-                if (conn != null && (conn.stableCount+conn.unstableCount) == 1) {
-                    if (cpr.proc != null && r.setAdj <= ProcessList.PERCEPTIBLE_APP_ADJ) {
-                        // If this is a perceptible app accessing the provider,
-                        // make sure to count it as being accessed and thus
-                        // back up on the LRU list.  This is good because
-                        // content providers are often expensive to start.
-                        checkTime(startTime, "getContentProviderImpl: before updateLruProcess");
-                        updateLruProcessLocked(cpr.proc, false, null);
-                        checkTime(startTime, "getContentProviderImpl: after updateLruProcess");
+                    // Return the provider instance right away since it already exists.
+                    conn = incProviderCountLocked(r, cpr, token, stable);
+                    if (conn != null && (conn.stableCount+conn.unstableCount) == 1) {
+                        if (cpr.proc != null && r.setAdj <= ProcessList.PERCEPTIBLE_APP_ADJ) {
+                            // If this is a perceptible app accessing the provider,
+                            // make sure to count it as being accessed and thus
+                            // back up on the LRU list.  This is good because
+                            // content providers are often expensive to start.
+                            checkTime(startTime, "getContentProviderImpl: before updateLruProcess");
+                            updateLruProcessLocked(cpr.proc, false, null);
+                            checkTime(startTime, "getContentProviderImpl: after updateLruProcess");
+                        }
                     }
-                }
-
-                checkTime(startTime, "getContentProviderImpl: before updateOomAdj");
-                final int verifiedAdj = cpr.proc.verifiedAdj;
-                boolean success = updateOomAdjLocked(cpr.proc);
-                // XXX things have changed so updateOomAdjLocked doesn't actually tell us
-                // if the process has been successfully adjusted.  So to reduce races with
-                // it, we will check whether the process still exists.  Note that this doesn't
-                // completely get rid of races with LMK killing the process, but should make
-                // them much smaller.
-                if (success && verifiedAdj != cpr.proc.setAdj && !isProcessAliveLocked(cpr.proc)) {
-                    success = false;
-                }
-                maybeUpdateProviderUsageStatsLocked(r, cpr.info.packageName, name);
-                checkTime(startTime, "getContentProviderImpl: after updateOomAdj");
-                if (DEBUG_PROVIDER) Slog.i(TAG_PROVIDER, "Adjust success: " + success);
-                // NOTE: there is still a race here where a signal could be
-                // pending on the process even though we managed to update its
-                // adj level.  Not sure what to do about this, but at least
-                // the race is now smaller.
-                if (!success || cpr.proc.killedByAm) {
-                    // Uh oh...  it looks like the provider's process
-                    // has been killed on us.  We need to wait for a new
-                    // process to be started, and make sure its death
-                    // doesn't kill our process.
-                    Slog.i(TAG, "Existing provider " + cpr.name.flattenToShortString()
-                            + " is crashing; detaching " + r);
-                    boolean lastRef = decProviderCountLocked(conn, cpr, token, stable);
-                    checkTime(startTime, "getContentProviderImpl: before appDied");
-                    appDiedLocked(cpr.proc);
-                    checkTime(startTime, "getContentProviderImpl: after appDied");
-                    if (!lastRef) {
-                        // This wasn't the last ref our process had on
-                        // the provider...  we have now been killed, bail.
-                        return null;
+                    checkTime(startTime, "getContentProviderImpl: before updateOomAdj");
+                    final int verifiedAdj = cpr.proc.verifiedAdj;
+                    boolean success = updateOomAdjLocked(cpr.proc);
+                    // XXX things have changed so updateOomAdjLocked doesn't actually tell us
+                    // if the process has been successfully adjusted.  So to reduce races with
+                    // it, we will check whether the process still exists.  Note that this doesn't
+                    // completely get rid of races with LMK killing the process, but should make
+                    // them much smaller.
+                    if (success && verifiedAdj != cpr.proc.setAdj
+                            && !isProcessAliveLocked(cpr.proc)) {
+                        success = false;
                     }
-                    providerRunning = false;
-                    conn = null;
-                } else {
-                    cpr.proc.verifiedAdj = cpr.proc.setAdj;
+                    maybeUpdateProviderUsageStatsLocked(r, cpr.info.packageName, name);
+                    checkTime(startTime, "getContentProviderImpl: after updateOomAdj");
+                    if (DEBUG_PROVIDER) Slog.i(TAG_PROVIDER, "Adjust success: " + success);
+                    // NOTE: there is still a race here where a signal could be
+                    // pending on the process even though we managed to update its
+                    // adj level.  Not sure what to do about this, but at least
+                    // the race is now smaller.
+                    if (!success) {
+                        // Uh oh...  it looks like the provider's process
+                        // has been killed on us.  We need to wait for a new
+                        // process to be started, and make sure its death
+                        // doesn't kill our process.
+                        Slog.i(TAG, "Existing provider " + cpr.name.flattenToShortString()
+                                + " is crashing; detaching " + r);
+                        boolean lastRef = decProviderCountLocked(conn, cpr, token, stable);
+                        checkTime(startTime, "getContentProviderImpl: before appDied");
+                        appDiedLocked(cpr.proc);
+                        checkTime(startTime, "getContentProviderImpl: after appDied");
+                        if (!lastRef) {
+                            // This wasn't the last ref our process had on
+                            // the provider...  we have now been killed, bail.
+                            return null;
+                        }
+                        providerRunning = false;
+                        conn = null;
+                    } else {
+                        cpr.proc.verifiedAdj = cpr.proc.setAdj;
+                    }
+                } finally {
+                    Binder.restoreCallingIdentity(origId);
                 }
-
-                Binder.restoreCallingIdentity(origId);
             }
 
             if (!providerRunning) {
