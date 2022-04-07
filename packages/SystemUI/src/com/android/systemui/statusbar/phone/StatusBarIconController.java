@@ -57,6 +57,8 @@ import com.android.systemui.tuner.TunerService.Tunable;
 import java.io.PrintWriter;
 import java.util.ArrayList;
 
+import org.cyanogenmod.internal.statusbar.NetworkTraffic;
+
 /**
  * Controls everything regarding the icons in the status bar and on Keyguard, including, but not
  * limited to: notification icons, signal cluster, additional status icons, and clock in the status

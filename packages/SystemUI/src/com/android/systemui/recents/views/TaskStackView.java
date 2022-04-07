@@ -1816,6 +1816,7 @@ public class TaskStackView extends FrameLayout implements TaskStack.TaskStackCal
                 deletedTasks.add(t);
             }
         }
+        taskViews.removeAll(deletedTasks);
         mAnimationHelper.startDeleteAllTasksAnimation(
                 taskViews, useGridLayout(), event.getAnimationTrigger());
         event.addPostAnimationCallback(new Runnable() {

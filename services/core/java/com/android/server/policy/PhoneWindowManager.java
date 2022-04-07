@@ -3063,6 +3063,8 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                     attrs.hideTimeoutMilliseconds = TOAST_WINDOW_TIMEOUT;
                 }
                 attrs.windowAnimations = com.android.internal.R.style.Animation_Toast;
+                // Toasts can't be clickable
+                attrs.flags |= WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
                 break;
         }
 
@@ -6562,8 +6564,7 @@ public class PhoneWindowManager implements WindowManagerPolicy {
         @Override public void run() {
             synchronized (mScreenshotLock) {
                 if (mScreenshotConnection != null) {
-                    mContext.unbindService(mScreenshotConnection);
-                    mScreenshotConnection = null;
+                    resetScreenshotConnection();
                     notifyScreenshotError();
                 }
             }
@@ -6595,8 +6596,7 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                             public void handleMessage(Message msg) {
                                 synchronized (mScreenshotLock) {
                                     if (mScreenshotConnection == myConn) {
-                                        mContext.unbindService(mScreenshotConnection);
-                                        mScreenshotConnection = null;
+                                        resetScreenshotConnection();
                                         mHandler.removeCallbacks(mScreenshotTimeout);
                                     }
                                 }
@@ -6619,8 +6619,7 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                 public void onServiceDisconnected(ComponentName name) {
                     synchronized (mScreenshotLock) {
                         if (mScreenshotConnection != null) {
-                            mContext.unbindService(mScreenshotConnection);
-                            mScreenshotConnection = null;
+                            resetScreenshotConnection();
                             mHandler.removeCallbacks(mScreenshotTimeout);
                             notifyScreenshotError();
                         }
@@ -6677,6 +6676,16 @@ public class PhoneWindowManager implements WindowManagerPolicy {
             default:
                 Log.w(TAG, "getVolumeWakeTriggered: unexpected keyCode=" + keyCode);
                 return false;
+        }
+    }
+
+    /**
+     * Reset the screenshot connection.
+     */
+    private void resetScreenshotConnection() {
+        if (mScreenshotConnection != null) {
+            mContext.unbindService(mScreenshotConnection);
+            mScreenshotConnection = null;
         }
     }
 
@@ -7539,6 +7548,12 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                 synchronized (mWindowManagerFuncs.getWindowManagerLock()) {
                     mLastSystemUiFlags = 0;
                     updateSystemUiVisibilityLw();
+                }
+
+                // close the screenshot connection on user switch so that screenshots
+                // are always started with the correct user's context
+                synchronized(mScreenshotLock) {
+                  resetScreenshotConnection();
                 }
             }
         }

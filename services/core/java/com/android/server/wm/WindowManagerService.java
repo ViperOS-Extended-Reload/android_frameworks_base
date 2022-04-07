@@ -191,6 +191,7 @@ import static android.view.WindowManager.LayoutParams.INPUT_FEATURE_NO_INPUT_CHA
 import static android.view.WindowManager.LayoutParams.LAST_APPLICATION_WINDOW;
 import static android.view.WindowManager.LayoutParams.LAST_SUB_WINDOW;
 import static android.view.WindowManager.LayoutParams.PRIVATE_FLAG_COMPATIBLE_WINDOW;
+import static android.view.WindowManager.LayoutParams.PRIVATE_FLAG_HIDE_NON_SYSTEM_OVERLAY_WINDOWS;
 import static android.view.WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY;
 import static android.view.WindowManager.LayoutParams.TYPE_APPLICATION;
 import static android.view.WindowManager.LayoutParams.TYPE_APPLICATION_STARTING;
@@ -213,6 +214,7 @@ import static android.view.WindowManagerGlobal.RELAYOUT_RES_SURFACE_CHANGED;
 import static android.view.WindowManagerPolicy.FINISH_LAYOUT_REDO_WALLPAPER;
 import static android.view.WindowManagerPolicy.TRANSIT_EXIT;
 import static android.view.WindowManagerPolicy.TRANSIT_PREVIEW_DONE;
+import static com.android.server.wm.AppTransition.MAX_APP_TRANSITION_DURATION;
 import static com.android.server.wm.AppWindowAnimator.PROLONG_ANIMATION_AT_END;
 import static com.android.server.wm.AppWindowAnimator.PROLONG_ANIMATION_AT_START;
 import static com.android.server.wm.DragResizeMode.DRAG_RESIZE_MODE_DOCKED_DIVIDER;
@@ -2081,8 +2083,13 @@ public class WindowManagerService extends IWindowManager.Stub
                 return res;
             }
 
-            final boolean openInputChannels = (outInputChannel != null
-                    && (attrs.inputFeatures & INPUT_FEATURE_NO_INPUT_CHANNEL) == 0);
+            boolean openInputChannels = (outInputChannel != null
+                && (attrs.inputFeatures & INPUT_FEATURE_NO_INPUT_CHANNEL) == 0);
+            if (callingUid != Process.SYSTEM_UID) {
+                Slog.e(TAG_WM,
+                    "App trying to use insecure INPUT_FEATURE_NO_INPUT_CHANNEL flag. Ignoring");
+                openInputChannels = true;
+            }
             if  (openInputChannels) {
                 win.openInputChannel(outInputChannel);
             }
@@ -2910,6 +2917,11 @@ public class WindowManagerService extends IWindowManager.Stub
                         | WindowManager.LayoutParams.SYSTEM_UI_VISIBILITY_CHANGED)) != 0) {
                     win.mLayoutNeeded = true;
                 }
+
+                if ((flagChanges & PRIVATE_FLAG_HIDE_NON_SYSTEM_OVERLAY_WINDOWS) != 0) {
+                    updateNonSystemOverlayWindowsVisibilityIfNeeded(
+                            win, win.mWinAnimator.getShown());
+                }
             }
 
             if (DEBUG_LAYOUT) Slog.v(TAG_WM, "Relayout " + win + ": viewVisibility=" + viewVisibility
@@ -3329,7 +3341,16 @@ public class WindowManagerService extends IWindowManager.Stub
                     mCurConfiguration.orientation, frame, displayFrame, insets, surfaceInsets,
                     isVoiceInteraction, freeform, atoken.mTask.mTaskId);
             if (a != null) {
-                if (DEBUG_ANIM) logWithStack(TAG, "Loaded animation " + a + " for " + atoken);
+                if (a != null) {
+                    // Setup the maximum app transition duration to prevent malicious app may set a long
+                    // animation duration or infinite repeat counts for the app transition through
+                    // ActivityOption#makeCustomAnimation or WindowManager#overridePendingTransition.
+                    a.restrictDuration(MAX_APP_TRANSITION_DURATION);
+                }
+                if (DEBUG_ANIM) {
+                    logWithStack(TAG, "Loaded animation " + a + " for " + atoken
+                            + ", duration: " + ((a != null) ? a.getDuration() : 0));
+                }
                 final int containingWidth = frame.width();
                 final int containingHeight = frame.height();
                 atoken.mAppAnimator.setAnimation(a, containingWidth, containingHeight,

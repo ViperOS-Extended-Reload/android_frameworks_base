@@ -22,7 +22,6 @@ import android.support.v14.preference.PreferenceFragment;
 import android.support.v7.preference.Preference;
 import android.support.v7.preference.PreferenceScreen;
 import android.util.Log;
-import android.view.MenuItem;
 
 import com.android.settingslib.drawer.SettingsDrawerActivity;
 import com.android.systemui.R;
@@ -69,7 +68,6 @@ public class TunerActivity extends SettingsDrawerActivity implements
             onBackPressed();
             return true;
         }
-        return false;
     }
 
     @Override
@@ -89,25 +87,19 @@ public class TunerActivity extends SettingsDrawerActivity implements
         }
     }
 
-    private boolean startPreferenceScreen(PreferenceFragment caller, String key, boolean backStack) {
+    @Override
+    public boolean onPreferenceStartScreen(PreferenceFragment caller, PreferenceScreen pref) {
         FragmentTransaction transaction = getFragmentManager().beginTransaction();
         SubSettingsFragment fragment = new SubSettingsFragment();
         final Bundle b = new Bundle(1);
-        b.putString(PreferenceFragment.ARG_PREFERENCE_ROOT, key);
+        b.putString(PreferenceFragment.ARG_PREFERENCE_ROOT, pref.getKey());
         fragment.setArguments(b);
         fragment.setTargetFragment(caller, 0);
         transaction.replace(R.id.content_frame, fragment);
-        if (backStack) {
-            transaction.addToBackStack("PreferenceFragment");
-        }
+        transaction.addToBackStack("PreferenceFragment");
         transaction.commit();
 
         return true;
-    }
-
-    @Override
-    public boolean onPreferenceStartScreen(PreferenceFragment caller, PreferenceScreen pref) {
-        return startPreferenceScreen(caller, pref.getKey(), true);
     }
 
     public static class SubSettingsFragment extends PreferenceFragment {

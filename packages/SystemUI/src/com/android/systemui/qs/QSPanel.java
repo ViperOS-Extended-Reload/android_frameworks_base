@@ -219,6 +219,9 @@ public class QSPanel extends LinearLayout implements Tunable, Callback {
         mBrightnessMirrorController = c;
         ToggleSlider brightnessSlider = (ToggleSlider) findViewById(R.id.brightness_slider);
         ToggleSlider mirror = (ToggleSlider) c.getMirror().findViewById(R.id.brightness_slider);
+        mMirrorAutoBrightnessView = (ImageView) c.getMirror().findViewById(R.id.brightness_icon);
+        mMirrorAutoBrightnessView.setVisibility(mAutoBrightnessView.getVisibility()
+                    == View.VISIBLE ? View.INVISIBLE : View.GONE);
         brightnessSlider.setMirror(mirror);
         brightnessSlider.setMirrorController(c);
     }

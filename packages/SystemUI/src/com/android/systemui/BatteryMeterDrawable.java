@@ -298,6 +298,7 @@ public class BatteryMeterDrawable extends Drawable implements
         super.setBounds(left, top, right, bottom);
         mHeight = bottom - top;
         mWidth = right - left;
+        mWarningTextPaint.setTextSize(mHeight * 0.75f);
     }
 
     private void updateShowPercent() {
